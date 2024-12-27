@@ -1,5 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, ConversationHandler
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler
+from telegram.ext import filters
 from telethon import TelegramClient
 import logging
 import configparser
@@ -55,8 +56,7 @@ updater = None
 def start(update: Update, context):
     """Приветственное сообщение при запуске бота"""
     update.message.reply_text(
-        "Привет! Я ваш помощник.
-"
+        "Привет! Я ваш помощник."
         "Настройте аккаунт через /setup или выберите действие ниже:",
         reply_markup=main_menu_keyboard()
     )
@@ -165,7 +165,7 @@ if __name__ == '__main__':
         entry_points=[CallbackQueryHandler(spam_action, pattern='spam')],
         states={
             CHOOSING_CHANNEL: [CallbackQueryHandler(channel_chosen, pattern='channel_')],
-            CHOOSING_MESSAGE: [MessageHandler(Filters.text & ~Filters.command, handle_message)],
+            CHOOSING_MESSAGE: [MessageHandler(Filters.text & ~filters.command, handle_message)],
         },
         fallbacks=[],
     )

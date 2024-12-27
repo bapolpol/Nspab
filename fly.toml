@@ -1,18 +1,9 @@
-# fly.toml app configuration file for spab
-app = "spab"
-primary_region = "fra"
+app = "234-little-leaf-8229"
 
-[build]
-  dockerfile = "Dockerfile"  # Указываем Dockerfile для сборки контейнера
-
-[mounts]
-  source = "data"
-  destination = "/app/data"
+[deploy]
+  release_command = "python3 start.py"
 
 [env]
-  TOKEN = "ВАШ_ТЕЛЕГРАМ_ТОКЕН"  # Ваш токен Telegram-бота
-
-[[vm]]
-  memory = "1gb"
-  cpu_kind = "shared"
-  cpus = 1
+  PYTHONUNBUFFERED = "true"
+[build]
+  builder = "paketobuildpacks/builder:base"
