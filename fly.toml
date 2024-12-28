@@ -1,9 +1,0 @@
-app = "234-little-leaf-8229"
-
-[deploy]
-  release_command = "python3 start.py"
-
-[env]
-  PYTHONUNBUFFERED = "true"
-[build]
-  builder = "paketobuildpacks/builder:base"
