@@ -1,13 +1,23 @@
 from telethon import TelegramClient, events, Button
 import configparser
+import os
 
 # Чтение конфигурации
-cpass = configparser.RawConfigParser()
-cpass.read('config.data')
+config_file = 'config.data'
+if not os.path.exists(config_file):
+    print("Ошибка: файл config.data не найден. Пожалуйста, выполните настройку.")
+    exit(1)
 
-api_id = cpass['cred']['id']
-api_hash = cpass['cred']['hash']
-bot_token = cpass['cred']['token']
+cpass = configparser.RawConfigParser()
+cpass.read(config_file)
+
+try:
+    api_id = int(cpass['cred']['id'])
+    api_hash = cpass['cred']['hash']
+    bot_token = cpass['cred']['token']
+except KeyError as e:
+    print(f"Ошибка: отсутствует ключ {e} в конфигурации. Проверьте файл config.data.")
+    exit(1)
 
 # Создание клиентов
 bot = TelegramClient('bot', api_id, api_hash).start(bot_token=bot_token)
@@ -15,14 +25,15 @@ client = TelegramClient('user', api_id, api_hash).start()
 
 # Глобальные переменные
 dialogs = []
-selected_chats_for_broadcast = []  # Список выбранных чатов для рассылки
+selected_chats_for_broadcast = []
 selected_message = None
-action = None  # Действие: 'Рассылка' или 'Пересылка'
+action = None
 
 # Команда /start
 @bot.on(events.NewMessage(pattern="/start"))
 async def start(event):
     await event.reply(
+        "Привет! Этот бот поможет вам отправлять сообщения в несколько чатов.\n\n"
         "Выберите действие:",
         buttons=[
             [Button.inline("Рассылка", b"broadcast")],
@@ -30,7 +41,7 @@ async def start(event):
         ]
     )
 
-# Обработка выбора действия (Рассылка)
+# Обработка выбора "Рассылка"
 @bot.on(events.CallbackQuery(data=b"broadcast"))
 async def broadcast_handler(event):
     global action, dialogs
@@ -43,13 +54,68 @@ async def broadcast_handler(event):
             chat_list += f"{i}. {dialog.name} (ID: {dialog.id})\n"
 
     await event.edit(
-        chat_list + "\nВведите номер чата для выбора (или через запятую) или нажмите 'Назад'.",
+        chat_list + "\nВведите номера чатов через запятую (например, 1,2,3):",
         buttons=[
             [Button.inline("Назад", b"back")],
         ]
     )
 
-# Обработка выбора действия (Пересылка)
+# Обработка выбора "Назад"
+@bot.on(events.CallbackQuery(data=b"back"))
+async def back_handler(event):
+    await start(event)
+
+# Обработка ввода номеров чатов для рассылки
+@bot.on(events.NewMessage)
+async def chat_selection_handler(event):
+    global action, selected_chats_for_broadcast, dialogs, selected_message
+
+    if action == "Рассылка":
+        chat_input = event.text.strip()
+        try:
+            chat_indexes = [int(i) - 1 for i in chat_input.split(",")]
+            selected_chats_for_broadcast = [dialogs[i] for i in chat_indexes if 0 <= i < len(dialogs)]
+            if not selected_chats_for_broadcast:
+                await event.reply("Вы не выбрали ни одного чата. Попробуйте снова.")
+                return
+
+            await event.reply("Введите сообщение, которое хотите разослать:")
+            action = "Введите сообщение"
+        except ValueError:
+            await event.reply("Ошибка: пожалуйста, введите корректные номера чатов через запятую (например, 1,2,3).")
+
+    elif action == "Введите сообщение":
+        selected_message = event.text.strip()
+        if selected_message:
+            confirmation_text = "Вы подтверждаете рассылку сообщения в следующие чаты?\n"
+            for chat in selected_chats_for_broadcast:
+                confirmation_text += f"{chat.name} (ID: {chat.id})\n"
+
+            confirmation_text += f"\nСообщение: {selected_message[:50]}..."  # Ограничим вывод текста до 50 символов
+
+            await event.reply(
+                confirmation_text,
+                buttons=[
+                    [Button.inline("Подтвердить", b"confirm_broadcast")],
+                    [Button.inline("Назад", b"back")]
+                ]
+            )
+        else:
+            await event.reply("Сообщение не может быть пустым. Пожалуйста, введите текст.")
+
+# Подтверждение рассылки
+@bot.on(events.CallbackQuery(data=b"confirm_broadcast"))
+async def confirm_broadcast_handler(event):
+    global selected_message, selected_chats_for_broadcast
+
+    try:
+        for chat in selected_chats_for_broadcast:
+            await client.send_message(chat.id, selected_message)
+        await event.reply("Сообщение успешно разослано в выбранные чаты!")
+    except Exception as e:
+        await event.reply(f"Ошибка при рассылке: {str(e)}")
+
+# Команда для пересылки
 @bot.on(events.CallbackQuery(data=b"forward"))
 async def forward_handler(event):
     global action, dialogs
@@ -62,93 +128,30 @@ async def forward_handler(event):
             chat_list += f"{i}. {dialog.name} (ID: {dialog.id})\n"
 
     await event.edit(
-        chat_list + "\nВведите номер чата для выбора или нажмите 'Назад'.",
+        chat_list + "\nВведите номера чатов через запятую для пересылки (например, 1,2,3):",
         buttons=[
             [Button.inline("Назад", b"back")],
         ]
     )
 
-# Кнопка "Назад"
-@bot.on(events.CallbackQuery(data=b"back"))
-async def back_handler(event):
-    await start(event)
-
-# Обработка ввода номера чата для рассылки
+# Обработка пересылки сообщений
 @bot.on(events.NewMessage)
-async def chat_selection_handler(event):
-    global action, selected_chats_for_broadcast, dialogs, selected_message
+async def forward_message_handler(event):
+    global action, selected_chats_for_broadcast, dialogs
 
-    # Если выбрали "Рассылку", то обрабатываем ввод чатов
-    if action == "Рассылка":
-        chat_input = event.text.strip()
-        if chat_input:  # Если введен текст
-            chat_indexes = chat_input.split(",")  # Разделяем по запятой или тире
-            selected_chats_for_broadcast.clear()  # Очищаем предыдущие выборы
+    if action == "Пересылка":
+        try:
+            message_to_forward = await client.get_messages(event.chat_id, ids=event.id)
+            if not selected_chats_for_broadcast:
+                await event.reply("Ошибка: чаты для пересылки не выбраны.")
+                return
 
-            # Перебираем чаты по номерам
-            for index in chat_indexes:
-                try:
-                    chat_index = int(index.strip()) - 1
-                    if 0 <= chat_index < len(dialogs):
-                        selected_chats_for_broadcast.append(dialogs[chat_index])
-                    else:
-                        await event.reply(f"Чат с номером {index} не найден.")
-                except ValueError:
-                    await event.reply("Ошибка: Введите корректные номера чатов.")
-
-            if selected_chats_for_broadcast:
-                # Запрашиваем текст сообщения
-                await event.reply("Теперь введите текст сообщения для рассылки:")
-                action = "Введите сообщение"  # Меняем действие на ввод сообщения
-            else:
-                await event.reply("Вы не выбрали чаты. Попробуйте снова.")
-
-    # Если выбрали "Пересылку", то обрабатываем выбор сообщения
-    elif action == "Пересылка":
-        if event.text.isdigit():
-            chat_index = int(event.text.strip()) - 1
-            if 0 <= chat_index < len(dialogs):
-                selected_chat = dialogs[chat_index]
-                messages = await client.get_messages(selected_chat, limit=5)
-                message_list = "Выберите сообщение для пересылки:\n"
-                for i, msg in enumerate(messages, start=1):
-                    text_preview = msg.text[:50] if msg.text else "[Медиа]"
-                    message_list += f"{i}. {text_preview}\n"
-                
-                await event.reply(message_list + "\nВведите номер сообщения для пересылки или нажмите 'Назад'.", buttons=[Button.inline("Назад", b"back")])
-            else:
-                await event.reply("Неверный номер чата. Попробуйте снова.")
-        else:
-            await event.reply("Пожалуйста, выберите правильный номер чата для пересылки.")
-
-    elif action == "Введите сообщение":
-        selected_message = event.text.strip()
-        confirmation_text = "Вы подтверждаете рассылку в следующие чаты?\n"
-        for chat in selected_chats_for_broadcast:
-            confirmation_text += f"{chat.name} (ID: {chat.id})\n"
-
-        confirmation_text += f"\nСообщение: {selected_message[:50]}..."
-
-        await event.reply(
-            confirmation_text + "\n\nНажмите 'Подтвердить' для рассылки или 'Назад' для отмены.",
-            buttons=[
-                [Button.inline("Подтвердить", b"confirm_broadcast")],
-                [Button.inline("Назад", b"back")]
-            ]
-        )
-
-# Подтверждение рассылки
-@bot.on(events.CallbackQuery(data=b"confirm_broadcast"))
-async def confirm_broadcast_handler(event):
-    global selected_message, selected_chats_for_broadcast
-
-    try:
-        for chat in selected_chats_for_broadcast:
-            await client.send_message(chat.id, selected_message)
-        await event.reply("Сообщение успешно разослано во все выбранные чаты!")
-    except Exception as e:
-        await event.reply(f"Ошибка при рассылке: {str(e)}")
+            for chat in selected_chats_for_broadcast:
+                await client.forward_messages(chat.id, message_to_forward)
+            await event.reply("Сообщение успешно переслано в выбранные чаты!")
+        except Exception as e:
+            await event.reply(f"Ошибка при пересылке: {str(e)}")
 
 # Запуск бота
-print("Бот запущен и готов к работе!")
+print("Бот запущен. Ожидание команд...")
 bot.run_until_disconnected()

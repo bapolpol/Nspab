@@ -1,5 +1,6 @@
-telethon
-configparser
-python-telegram-bot==20.3  # или актуальная версия
-gunicorn
-requests
+telethon==1.25.0  # версия на момент написания, выберите актуальную
+Flask==2.3.2
+gunicorn==20.1.0
+requests==2.28.1
+configparser==5.3.0
+asyncio  # используется для асинхронных операций, не нужно указывать точную версию

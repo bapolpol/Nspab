@@ -126,6 +126,7 @@ def run_bot():
         print(gr + "[" + re + "!" + gr + "] Error while starting bot: " + str(e))
 
 
+
 if __name__ == "__main__":
     try:
         if len(sys.argv) > 1:
